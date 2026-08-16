@@ -7,10 +7,10 @@
 #
 # `version` must equal the tag the workflow publishes. CI checks that before it
 # pushes anything (`.github/workflows/docker-publish.yml`), because an App whose
-# version says 0.1.0-beta.1 while its image is 0.1.0-beta.2 is an App the
-# Supervisor will never update correctly.
+# version says one thing while its image says another is an App the Supervisor
+# will never update correctly.
 name: GardenCare
-version: "0.1.0-beta.1"
+version: "0.1.0-beta.2"
 slug: gardencare
 description: >-
   Gartenpflege-Assistent: Pflanzen, Pflegeplan, Aufgaben, Fotos und Kalender --
