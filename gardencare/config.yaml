@@ -10,7 +10,7 @@
 # version says one thing while its image says another is an App the Supervisor
 # will never update correctly.
 name: GardenCare
-version: "0.1.0-beta.4"
+version: "0.1.0-beta.5"
 slug: gardencare
 description: >-
   Gartenpflege-Assistent: Pflanzen, Pflegeplan, Aufgaben, Fotos und Kalender --
@@ -49,6 +49,29 @@ panel_title: Garten
 # them in the database. A second secret store in App options would be a second
 # place to leak them from.
 homeassistant_api: true
+
+# The Supervisor restarts the App when this stops answering (N51). It points at
+# the liveness endpoint, not at diagnostics: `docs/API.md` § 4 keeps `/health`
+# free of any state, and `docs/SECURITY.md` § 3 requires that healthcheck output
+# never become an information leak. A watchdog aimed at a richer endpoint would
+# be both -- it would publish the garden's state to anything that can reach the
+# port, and it would restart GardenCare because a *sensor* was unavailable.
+watchdog: http://[HOST]:[PORT:8000]/api/v1/health
+
+# Stop the App before a Home Assistant backup, and start it again after.
+#
+# The database is SQLite in WAL mode. A hot copy taken while the scheduler is
+# mid-transaction can capture a database file and a write-ahead log that do not
+# agree, and the household discovers it at the only moment it matters -- while
+# restoring. A few seconds offline during a nightly backup is the cheaper half
+# of that trade. This is the Supervisor's backup of the whole App; GardenCare's
+# own export and restore is N52 and does not exist yet.
+backup: cold
+
+# AppArmor is on, and `apparmor.txt` beside this file is the profile the
+# Supervisor loads. Written and reviewed, never yet loaded on Home Assistant OS
+# from this repository -- see the header of that file, and HG-03.
+apparmor: true
 
 # Explicitly *not* requested, and each absence is a decision:
 #   hassio_api / hassio_role  -- GardenCare never talks to the Supervisor itself

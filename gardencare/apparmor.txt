@@ -1,0 +1,140 @@
+# AppArmor profile for the GardenCare Home Assistant App (N51).
+#
+# The Supervisor loads this file automatically because of its name, and enforces
+# it around the container. It is the last line of the file-upload defence
+# described in `docs/SECURITY.md` § 4: the media pipeline decides what an upload
+# *is*, and this decides what the process could do if that judgement were ever
+# wrong.
+#
+# ## The shape of the decisions here
+#
+# **Deny what is dangerous, allow what is ordinary.** A profile so tight that a
+# routine Python import fails is a profile the next maintainer switches off, and
+# an add-on running with `apparmor: false` is worse than one running under a
+# profile that stops the attacks that actually matter. So the denials below are
+# specific and permanent -- no mounting, no kernel modules, no raw sockets, no
+# reading another process's memory -- while ordinary reads of the runtime are
+# allowed.
+#
+# **The container runs as root** -- there is no `USER` in the Dockerfile and the
+# entrypoint does not drop privileges -- which is what makes the capability list
+# load-bearing rather than decorative: root's power *is* its capability set.
+# `dac_override` and friends stay because the entrypoint creates `/data` on a
+# volume whose ownership GardenCare does not control; `sys_admin`, `sys_module`,
+# `net_admin` and `sys_ptrace` go, because nothing here has any business with the
+# kernel, the network stack or another process.
+#
+# **`/data` is the only place this add-on writes.** That is not merely
+# convention here -- everything else is read-only under this profile, so a bug
+# that tried to write a photograph outside `/data` would be refused rather than
+# silently succeed and be lost on the next update.
+#
+# ## What is not proven
+#
+# This profile has never been loaded on Home Assistant OS from this repository:
+# no session that wrote it had a Supervisor, or Docker, to try it in. It is
+# reviewed, not exercised. **HG-03 must include installing the App with it and
+# confirming GardenCare starts, serves Ingress, writes a photograph and survives
+# a restart** -- if the App fails to start, the Supervisor log names the denied
+# operation, and that name belongs in an issue rather than in a hurried
+# `apparmor: false`.
+
+#include <tunables/global>
+
+profile gardencare flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  # --- capabilities ----------------------------------------------------------
+  # Kept: the entrypoint creates and writes /data on a Supervisor-managed
+  # volume, and does so as root over an ownership it did not choose.
+  capability dac_override,
+  capability dac_read_search,
+  capability chown,
+  capability fowner,
+  capability fsetid,
+  capability setgid,
+  capability setuid,
+  capability kill,
+
+  # Refused, permanently. Each of these would be a step *out* of the container,
+  # and GardenCare has no use for any of them: it reads sensors through the
+  # Supervisor proxy over HTTP, and touches no hardware.
+  deny capability sys_admin,
+  deny capability sys_module,
+  deny capability sys_rawio,
+  deny capability sys_ptrace,
+  deny capability sys_boot,
+  deny capability net_admin,
+  deny capability net_raw,
+  deny capability mac_admin,
+  deny capability mac_override,
+
+  # --- namespaces and the kernel --------------------------------------------
+  deny mount,
+  deny umount,
+  deny pivot_root,
+  deny ptrace (trace read),
+  deny @{PROC}/@{pid}/mem rwklx,
+  deny @{PROC}/sys/** w,
+  deny @{PROC}/kcore rwklx,
+  deny /sys/** wl,
+  deny /boot/** rwklx,
+
+  # --- network ---------------------------------------------------------------
+  # Outbound TCP to the Supervisor proxy and, when the household configures
+  # them, to Pl@ntNet, Mistral and GBIF. UDP for DNS. Nothing raw: GardenCare
+  # never inspects or forges a packet, so a process that tried to would be
+  # doing something GardenCare does not do.
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+  network unix stream,
+  network netlink raw,
+  deny network raw,
+  deny network packet,
+
+  # --- the runtime, read and execute ----------------------------------------
+  /bin/** ix,
+  /usr/bin/** ix,
+  /usr/local/bin/** ix,
+  /usr/local/lib/python3.11/** mr,
+  /lib/** mr,
+  /lib64/** mr,
+  /usr/lib/** mr,
+  /usr/share/** r,
+  /etc/** r,
+  # Configuration is baked into the image and supplied through the environment.
+  # Nothing at runtime has a reason to rewrite it.
+  deny /etc/** w,
+
+  # --- the application ------------------------------------------------------
+  # Read and execute, never write: the code a container runs should not be
+  # something that container can change.
+  /app/ r,
+  /app/** r,
+  deny /app/** w,
+
+  # --- the household's data -------------------------------------------------
+  # The SQLite database (with its WAL and shared-memory files, hence `k` for
+  # locking) and the photographs. The one writable place.
+  /data/ rw,
+  /data/** rwk,
+
+  /tmp/ rw,
+  /tmp/** rwk,
+
+  # --- process self-inspection ----------------------------------------------
+  owner @{PROC}/@{pid}/fd/ r,
+  owner @{PROC}/@{pid}/stat r,
+  owner @{PROC}/@{pid}/status r,
+  owner @{PROC}/@{pid}/cmdline r,
+  @{PROC}/sys/kernel/random/boot_id r,
+  @{PROC}/meminfo r,
+  @{PROC}/stat r,
+
+  /dev/urandom r,
+  /dev/random r,
+  /dev/null rw,
+  /dev/tty rw,
+}

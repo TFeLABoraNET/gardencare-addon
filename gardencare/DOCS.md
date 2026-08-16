@@ -52,6 +52,32 @@ Bewusst **nicht** angefordert: `host_network`, `privileged`, `full_access`, Ger�
 zusätzliche Verzeichnis-Mappings. Ein Gartenprogramm braucht keine Hardware, und hinter Ingress kein
 Host-Netzwerk.
 
+Dazu läuft das Add-on unter einem eigenen **AppArmor-Profil** (`apparmor.txt`). Es verbietet
+dauerhaft, was GardenCare nie tut: Einhängen von Dateisystemen, Kernel-Module, Rohsockets, Lesen
+fremder Prozessspeicher. `/data` ist das einzige Verzeichnis, in das geschrieben werden darf — auch
+der Programmcode selbst ist schreibgeschützt. Das ist die letzte Absicherung hinter der
+Bild-Prüfung: die entscheidet, *was* ein Upload ist, das Profil entscheidet, was ein Prozess
+könnte, falls diese Entscheidung einmal falsch wäre.
+
+> Das Profil ist geprüft, aber **noch nie auf Home Assistant OS geladen worden**. Startet das Add-on
+> nach einem Update nicht, steht im Supervisor-Protokoll, welche Operation verweigert wurde. Bitte
+> als Issue melden statt AppArmor abzuschalten.
+
+## Überwachung und Sicherung
+
+Der Supervisor prüft laufend `/api/v1/health` und startet das Add-on neu, wenn es nicht mehr
+antwortet. Dieser Endpunkt sagt ausschließlich „der Prozess lebt" — er verrät nichts über den
+Garten und nichts über eingerichtete Dienste.
+
+Vor einer Home-Assistant-Sicherung wird das Add-on **gestoppt** (`backup: cold`) und danach wieder
+gestartet. Die Datenbank ist SQLite im WAL-Modus: eine Kopie im laufenden Betrieb kann Datenbank und
+Schreibprotokoll in einem Zustand erwischen, der nicht zusammenpasst — auffallen würde das genau
+dann, wenn man die Sicherung braucht. Ein paar Sekunden Ausfall pro Sicherung sind die günstigere
+Hälfte dieses Tauschs.
+
+**Eine eigene Export-/Wiederherstellungsfunktion in GardenCare gibt es noch nicht.** Bis dahin ist
+die Home-Assistant-Sicherung der Weg — oder eine Kopie von `/data`.
+
 ## Cloud-Dienste (optional)
 
 Pl@ntNet (Bestimmung per Foto) und Mistral (KI-Wissensentwürfe) sind optional und brauchen jeweils
