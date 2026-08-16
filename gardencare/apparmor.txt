@@ -129,11 +129,23 @@ profile gardencare flags=(attach_disconnected,mediate_deleted) {
   deny /etc/** w,
 
   # --- the application ------------------------------------------------------
-  # Read and execute, never write: the code a container runs should not be
-  # something that container can change.
+  # Read, never write: the code a container runs should not be something that
+  # container can change.
   /app/ r,
   /app/** r,
   deny /app/** w,
+
+  # The virtual environment lives *inside* /app -- `PATH="/app/.venv/bin:$PATH"`
+  # in the Dockerfile -- so `alembic` and `uvicorn` are here and not in
+  # /usr/local/bin. Read alone got as far as running the entry point and no
+  # further:
+  #
+  #     /usr/local/bin/gardencare-start: 48: alembic: Permission denied
+  #
+  # `m` on the rest of it is not decoration either: compiled extension modules
+  # (`.so`) are memory-mapped, and Python fails to import them without it.
+  /app/.venv/bin/** rix,
+  /app/.venv/** mr,
 
   # --- the household's data -------------------------------------------------
   # The SQLite database (with its WAL and shared-memory files, hence `k` for
