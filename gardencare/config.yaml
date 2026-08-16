@@ -10,7 +10,7 @@
 # version says one thing while its image says another is an App the Supervisor
 # will never update correctly.
 name: GardenCare
-version: "0.1.0-beta.8"
+version: "0.1.0-beta.9"
 slug: gardencare
 description: >-
   Gartenpflege-Assistent: Pflanzen, Pflegeplan, Aufgaben, Fotos und Kalender --

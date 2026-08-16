@@ -29,25 +29,36 @@
 # that tried to write a photograph outside `/data` would be refused rather than
 # silently succeed and be lost on the next update.
 #
-# ## What review could not catch
+# ## Three broken releases, and what replaced the guessing
 #
-# The first version of this profile stopped the add-on from starting:
+# Versions of this file shipped that stopped the add-on from starting, in this
+# order:
 #
 #     sh: 0: cannot open /usr/local/bin/gardencare-start: Permission denied
+#     /usr/local/bin/gardencare-start: 48: alembic: Permission denied
+#     python: error while loading shared libraries: libpython3.12.so.1.0
 #
-# It granted execute on the entry point and not *read*, and a script is executed
-# by its interpreter reading it. That is a mistake nobody finds by reading a
-# profile -- it is found by loading one, which is exactly why HG-03 asks for an
-# install rather than a review.
+# Execute without read on a script; then a virtual environment inside `/app`
+# that was readable and not executable; then libpython, in a directory this file
+# had not covered, under a version it had guessed wrong -- `python3.11`, in an
+# image built `FROM python:3.12-slim`.
 #
-# Beyond the fix, the read rules below are deliberately a little wider than the
-# minimum anyone could argue for. Every additional round of "denied, try again"
-# costs the household a broken add-on, and none of the widening touches what the
-# profile exists to stop: no writes outside `/data`, no mounting, no kernel, no
-# raw sockets, no other process's memory. **HG-03 still means installing it and
-# confirming GardenCare starts, serves Ingress, stores a photograph and survives
-# a restart.** If something is still refused, the Supervisor log names it, and
-# that name belongs in an issue rather than in a hurried `apparmor: false`.
+# One cause: this file *described* a base image's internals instead of deriving
+# them. That is a description this repository cannot keep true across a base
+# image bump, and it was being verified on a household's Raspberry Pi.
+#
+# What replaced it: the read surface is now the whole read-only system, and the
+# security of this profile lives in its **denials**. `backend/tests/packaging`
+# checks concrete paths -- the entry point, `alembic`, libpython, an extension
+# module, the database, its lock files -- against these globs, and compiles the
+# profile with AppArmor's own parser where one is installed. Replayed against
+# the three versions above, that test reports exactly the failures each one
+# shipped.
+#
+# **HG-03 still means installing it** and confirming GardenCare starts, serves
+# Ingress, stores a photograph and survives a restart. If something is still
+# refused, the Supervisor log names it, and that name belongs in an issue rather
+# than in a hurried `apparmor: false`.
 
 #include <tunables/global>
 
@@ -104,28 +115,45 @@ profile gardencare flags=(attach_disconnected,mediate_deleted) {
   deny network raw,
   deny network packet,
 
-  # --- the runtime, read and execute ----------------------------------------
-  # `rix`, not `ix`. Execute permission alone is enough for a compiled binary,
-  # but a *script* is executed by its interpreter reading it -- and the entry
-  # point, `alembic` and `uvicorn` are all scripts. With `ix` the add-on failed
-  # to start at all:
+  # --- the runtime ----------------------------------------------------------
+  #
+  # **Read broadly, write nowhere, execute where programs live.** This section
+  # was three separate enumerations of "which files does a Python distribution
+  # need", and each one shipped a broken add-on:
   #
   #     sh: 0: cannot open /usr/local/bin/gardencare-start: Permission denied
+  #     /usr/local/bin/gardencare-start: 48: alembic: Permission denied
+  #     python: error while loading shared libraries: libpython3.12.so.1.0
   #
-  # which names a read that was refused, not a missing execute bit. This is the
-  # one thing the profile could not be reviewed into being right about, and the
-  # reason HG-03 asks for an install rather than a reading.
+  # The last one named a version this file had guessed wrong (3.11, in an image
+  # built `FROM python:3.12-slim`) in a directory it had not covered at all. The
+  # lesson is not "add that path too". It is that an allowlist of a base image's
+  # internals is a list this repository cannot keep true -- it changes with every
+  # base image bump, and it is verified on the household's Raspberry Pi.
+  #
+  # So the read surface is now the whole read-only system, and **the security of
+  # this profile lives in what it denies**: no write outside /data, no mount, no
+  # kernel module, no raw socket, no other process's memory, no capability that
+  # leaves the container. Those are the properties worth having, and none of them
+  # depends on knowing where libpython lives.
   /bin/** rix,
   /usr/bin/** rix,
   /usr/local/bin/** rix,
-  /usr/local/lib/python3.11/** mr,
+  /sbin/** rix,
+  /usr/sbin/** rix,
+
+  /usr/** mr,
   /lib/** mr,
   /lib64/** mr,
-  /usr/lib/** mr,
-  /usr/share/** r,
   /etc/** r,
-  # Configuration is baked into the image and supplied through the environment.
-  # Nothing at runtime has a reason to rewrite it.
+  /run/** r,
+
+  # The image is the artefact; a running container has no business editing it.
+  deny /usr/** w,
+  deny /bin/** w,
+  deny /sbin/** w,
+  deny /lib/** w,
+  deny /lib64/** w,
   deny /etc/** w,
 
   # --- the application ------------------------------------------------------
@@ -136,14 +164,9 @@ profile gardencare flags=(attach_disconnected,mediate_deleted) {
   deny /app/** w,
 
   # The virtual environment lives *inside* /app -- `PATH="/app/.venv/bin:$PATH"`
-  # in the Dockerfile -- so `alembic` and `uvicorn` are here and not in
-  # /usr/local/bin. Read alone got as far as running the entry point and no
-  # further:
-  #
-  #     /usr/local/bin/gardencare-start: 48: alembic: Permission denied
-  #
-  # `m` on the rest of it is not decoration either: compiled extension modules
-  # (`.so`) are memory-mapped, and Python fails to import them without it.
+  # in the Dockerfile -- so `alembic` and `uvicorn` are here, not in
+  # /usr/local/bin. `m` because compiled extension modules (`.so`) are
+  # memory-mapped and Python cannot import them otherwise.
   /app/.venv/bin/** rix,
   /app/.venv/** mr,
 
