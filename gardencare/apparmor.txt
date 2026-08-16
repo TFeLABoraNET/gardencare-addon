@@ -29,15 +29,25 @@
 # that tried to write a photograph outside `/data` would be refused rather than
 # silently succeed and be lost on the next update.
 #
-# ## What is not proven
+# ## What review could not catch
 #
-# This profile has never been loaded on Home Assistant OS from this repository:
-# no session that wrote it had a Supervisor, or Docker, to try it in. It is
-# reviewed, not exercised. **HG-03 must include installing the App with it and
-# confirming GardenCare starts, serves Ingress, writes a photograph and survives
-# a restart** -- if the App fails to start, the Supervisor log names the denied
-# operation, and that name belongs in an issue rather than in a hurried
-# `apparmor: false`.
+# The first version of this profile stopped the add-on from starting:
+#
+#     sh: 0: cannot open /usr/local/bin/gardencare-start: Permission denied
+#
+# It granted execute on the entry point and not *read*, and a script is executed
+# by its interpreter reading it. That is a mistake nobody finds by reading a
+# profile -- it is found by loading one, which is exactly why HG-03 asks for an
+# install rather than a review.
+#
+# Beyond the fix, the read rules below are deliberately a little wider than the
+# minimum anyone could argue for. Every additional round of "denied, try again"
+# costs the household a broken add-on, and none of the widening touches what the
+# profile exists to stop: no writes outside `/data`, no mounting, no kernel, no
+# raw sockets, no other process's memory. **HG-03 still means installing it and
+# confirming GardenCare starts, serves Ingress, stores a photograph and survives
+# a restart.** If something is still refused, the Supervisor log names it, and
+# that name belongs in an issue rather than in a hurried `apparmor: false`.
 
 #include <tunables/global>
 
@@ -95,9 +105,19 @@ profile gardencare flags=(attach_disconnected,mediate_deleted) {
   deny network packet,
 
   # --- the runtime, read and execute ----------------------------------------
-  /bin/** ix,
-  /usr/bin/** ix,
-  /usr/local/bin/** ix,
+  # `rix`, not `ix`. Execute permission alone is enough for a compiled binary,
+  # but a *script* is executed by its interpreter reading it -- and the entry
+  # point, `alembic` and `uvicorn` are all scripts. With `ix` the add-on failed
+  # to start at all:
+  #
+  #     sh: 0: cannot open /usr/local/bin/gardencare-start: Permission denied
+  #
+  # which names a read that was refused, not a missing execute bit. This is the
+  # one thing the profile could not be reviewed into being right about, and the
+  # reason HG-03 asks for an install rather than a reading.
+  /bin/** rix,
+  /usr/bin/** rix,
+  /usr/local/bin/** rix,
   /usr/local/lib/python3.11/** mr,
   /lib/** mr,
   /lib64/** mr,
@@ -125,13 +145,20 @@ profile gardencare flags=(attach_disconnected,mediate_deleted) {
   /tmp/** rwk,
 
   # --- process self-inspection ----------------------------------------------
-  owner @{PROC}/@{pid}/fd/ r,
-  owner @{PROC}/@{pid}/stat r,
-  owner @{PROC}/@{pid}/status r,
-  owner @{PROC}/@{pid}/cmdline r,
+  # The whole of its own /proc entry, read-only and owner-scoped. Python, uvicorn
+  # and httpx each read a different corner of it (`maps`, `fd`, `mountinfo`,
+  # `status`), and enumerating them one by one is how the next start fails for a
+  # file nobody thought of. The dangerous parts -- `mem`, `kcore`, writes to
+  # `sys` -- are denied above, and a deny always wins over an allow.
+  owner @{PROC}/@{pid}/** r,
   @{PROC}/sys/kernel/random/boot_id r,
   @{PROC}/meminfo r,
   @{PROC}/stat r,
+  @{PROC}/cpuinfo r,
+
+  # Read-only: container runtimes report memory and CPU limits here, and writes
+  # remain refused by the deny rule above.
+  /sys/** r,
 
   /dev/urandom r,
   /dev/random r,
