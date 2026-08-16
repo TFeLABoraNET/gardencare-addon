@@ -1,0 +1,67 @@
+# GardenCare as a Home Assistant App (N49) -- experimental beta.
+#
+# This is the only Home Assistant configuration in the repository. There is
+# deliberately no second copy: two config.yaml files that must agree are two
+# files that will eventually disagree, and the symptom is an App that installs
+# with the wrong image or the wrong version.
+#
+# `version` must equal the tag the workflow publishes. CI checks that before it
+# pushes anything (`.github/workflows/docker-publish.yml`), because an App whose
+# version says 0.1.0-beta.1 while its image is 0.1.0-beta.2 is an App the
+# Supervisor will never update correctly.
+name: GardenCare
+version: "0.1.0-beta.1"
+slug: gardencare
+description: >-
+  Gartenpflege-Assistent: Pflanzen, Pflegeplan, Aufgaben, Fotos und Kalender --
+  lokal auf dem eigenen Gerät. Experimenteller Beta-Test.
+url: https://github.com/TFeLABoraNET/plantcalendar
+
+# Experimental, and it says so where Home Assistant shows it. This build exists
+# for HG-01 -- a person installing GardenCare and using it -- not for release.
+stage: experimental
+
+# One multi-arch image rather than the `{arch}` placeholder. The placeholder is a
+# compatibility fallback for repositories publishing per-architecture images;
+# GardenCare publishes a manifest, and naming it directly means the Supervisor
+# pulls the right layer without the name having to encode the answer.
+image: ghcr.io/tfelaboranet/gardencare
+arch:
+  - aarch64
+  - amd64
+
+# Ingress: reached through Home Assistant's own authentication, at a path the
+# Supervisor assigns and strips. The application already handles that -- N36
+# injects a per-request <base href> so a deep link survives a reload -- so
+# nothing here needs to configure a base path.
+ingress: true
+ingress_port: 8000
+panel_icon: mdi:sprout
+panel_title: Garten
+
+# Read the Core API through the Supervisor proxy, using the SUPERVISOR_TOKEN the
+# Supervisor injects at runtime. That is how GardenCare reads sensors and the
+# weather entity, and how it sends notifications through a Home Assistant service.
+#
+# No token is configured here and none can be: it does not exist until the App
+# runs. Nothing below asks the user for a credential either -- Mistral, Pl@ntNet
+# and Telegram are configured in GardenCare's own Settings screen, which stores
+# them in the database. A second secret store in App options would be a second
+# place to leak them from.
+homeassistant_api: true
+
+# Explicitly *not* requested, and each absence is a decision:
+#   hassio_api / hassio_role  -- GardenCare never talks to the Supervisor itself
+#   host_network              -- Ingress needs no host networking
+#   privileged / full_access  -- nothing here touches hardware
+#   map: [config, ssl, share] -- the App's data belongs in /data, nowhere else
+#   devices                   -- no camera or serial device is used
+#
+# `/data` is provided by the Supervisor and persists across restarts and updates.
+# It holds the SQLite database and the photo files, and it is the only thing a
+# tester needs to keep.
+
+init: false
+
+options: {}
+schema: {}
