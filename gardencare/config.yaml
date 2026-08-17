@@ -10,7 +10,7 @@
 # version says one thing while its image says another is an App the Supervisor
 # will never update correctly.
 name: GardenCare
-version: "0.1.0-beta.15"
+version: "0.1.0-beta.16"
 slug: gardencare
 description: >-
   Gartenpflege-Assistent: Pflanzen, Pflegeplan, Aufgaben, Fotos und Kalender --
@@ -38,6 +38,16 @@ ingress: true
 ingress_port: 8000
 panel_icon: mdi:sprout
 panel_title: Garten
+
+# Visible to everyone in the household, not only administrators. An add-on's
+# ingress panel defaults to admin-only (`panel_admin: true`), which is why a
+# non-admin member of the household saw no "Garten" entry in the Home Assistant
+# sidebar at all. GardenCare is a shared household tool -- the person who waters
+# the plants is often not the person who administers Home Assistant -- so the
+# panel is opened to all users. Every request still passes through Home
+# Assistant's own authentication first; this widens who sees the entry, not
+# whether the door is locked.
+panel_admin: false
 
 # Read the Core API through the Supervisor proxy, using the SUPERVISOR_TOKEN the
 # Supervisor injects at runtime. That is how GardenCare reads sensors and the
