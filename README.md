@@ -26,7 +26,7 @@ Gerät.
 Nur die Add-on-Beschreibung. Das Image kommt aus der GitHub Container Registry:
 
 ```text
-ghcr.io/tfelaboranet/gardencare:0.1.0-beta.21
+ghcr.io/tfelaboranet/gardencare:0.1.0-beta.22
 ```
 
 Unterstützt werden `aarch64` (Raspberry Pi 4) und `amd64`.
